@@ -141,7 +141,7 @@ class Param:    # parameters
         S.verb   = 1     # printing verbosity level (higher -> more verbose)
         S.rtol   = 1e-10 # residual tolerance for Newton
         S.niglob = 50    # maximum number of global iterations
-        S.doplot = True  # true to plot results after each solution
+        S.doplot = False  # true to plot results after each solution
         S.axplot = []    # plotting axes (for more control of where plots go)
 
         # viscous parameters
