@@ -57,7 +57,7 @@ class XFoilAdapter():
         number_of_airfoils = len(self.airfoils)
         results = [(int(index),xfoil_object.results[index]) for index in xfoil_object.results]
         results = sorted(results, key=lambda x: x[0])
-        np_results = np.array([result[1] for result in results]).reshape(-1, 2)
+        np_results = np.array([result[1] for result in results]).reshape(-1, number_of_airfoils)
         return np_results
     
     def __exit__(self, type, value, tb):

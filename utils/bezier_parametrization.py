@@ -1,11 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 import logging
 from bezier.curve import Curve as BezierCurve
 
 class BezierAirfoil:
     def __init__(self, parameters: list, shape=tuple[int,int]):
-        
+        for parameter in parameters:
+            if math.isnan(parameter):
+                raise Exception("Invalid parameter, contains NaN")
         self.parameters = parameters
         self.shape = shape
         upper_control_points, lower_control_points = BezierAirfoil._map_parameters_to_control_points(parameters, shape)
@@ -23,6 +26,12 @@ class BezierAirfoil:
         parameters = BezierAirfoil.random_params_initializer(mean=mean, range_size=range_size, shape=shape, max_try_count=max_try_count)
         return BezierAirfoil(parameters=parameters, shape=shape)
     
+    @staticmethod
+    def from_normalized_parameters(parameters: list, shape=tuple[int,int]):
+        upper_bounds, lower_bounds = BezierAirfoil.get_bounds(shape)
+        parameters = [p * (u - l) + l for p, u, l in zip(parameters, upper_bounds, lower_bounds)]
+        return BezierAirfoil(parameters=parameters, shape=shape)
+
     @staticmethod
     def random_params_initializer(mean=0.1, range_size=0.07, shape=(6,6), max_try_count=1000):
         for i in  range(max_try_count):
@@ -43,6 +52,21 @@ class BezierAirfoil:
             if(BezierAirfoil.check_parameters(parameters, shape)):
                 return parameters
         raise Exception("Could not generate valid airfoil")
+    
+    @staticmethod
+    def get_bounds(shape=(6,6)):
+        z_te_bounds = [0.0, 0.1]
+        dz_te_bounds = [0.0, 0.01]
+        y_upper_1_bounds = [0.0, 0.5]
+        y_lower_1_bounds = [-0.5, 0.0]
+        x_upper_bounds = [0.0, 1.0]
+        x_lower_bounds = [0.0, 1.0]
+        y_upper_bounds = [-0.1, 0.2]
+        y_lower_bounds = [-0.2, 0.1]
+        upper_bounds = [z_te_bounds[1], dz_te_bounds[1], y_upper_1_bounds[1], y_lower_1_bounds[1]] + [x_upper_bounds[1]] * (shape[0] - 3) + [y_upper_bounds[1]] * (shape[0] - 2)  + [x_lower_bounds[1]] * (shape[1] - 3) + [y_lower_bounds[1]] * (shape[1] - 2)
+
+        lower_bounds = [z_te_bounds[0], dz_te_bounds[0], y_upper_1_bounds[0], y_lower_1_bounds[0]] + [x_upper_bounds[0]] * (shape[0] - 3) + [y_upper_bounds[0]] * (shape[0] - 2) + [x_lower_bounds[0]] * (shape[1] - 3) + [y_lower_bounds[0]] * (shape[1] - 2)
+        return upper_bounds, lower_bounds
 
     @staticmethod
     def check_parameters(parameters: list, shape=tuple[int,int]):
@@ -59,7 +83,7 @@ class BezierAirfoil:
         if(len(parameters) != BezierAirfoil.parameters_required_for_shape(shape)):
             raise Exception(f"Invalid number of parameters for shape {shape}, expected {BezierAirfoil.parameters_required_for_shape(shape)} got {len(parameters)}")
         
-        parameters_copy = parameters.copy()
+        parameters_copy = list(parameters).copy()
         z_te = parameters_copy.pop(0)
         dz_te = parameters_copy.pop(0)
         y_upper_1 = parameters_copy.pop(0)
@@ -201,7 +225,6 @@ if __name__ == "__main__":
         -0.11485557171942154, # y_3
         0.014626604247552747, # y_4
     ]
-    dz_te = 0
 
     airfoil = BezierAirfoil(
         parameters=parameters,
