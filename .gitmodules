@@ -1,0 +1,3 @@
+[submodule "xfoil"]
+	path = xfoil
+	url = https://github.com/HugoxSaraiva/xfoil_py
