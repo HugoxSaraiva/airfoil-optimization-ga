@@ -1,151 +1,139 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import logging
-from utils.bezier_curve import BezierCurve2D
+from bezier.curve import Curve as BezierCurve
 
 class BezierAirfoil:
-    def __init__(self, upper_points, lower_points, dz_te):
-        self.upper_points = upper_points
-        self.lower_points = lower_points
-        self.dz_te = dz_te
-        # Adding (0,0) to first upper control points to assure continuity at (0,0)
-        # The last control point is (1, dz_te)
-        upper_control_points_as_list = [0, 0] + upper_points + [1, dz_te]
-        self.upper_control_points = np.array(upper_control_points_as_list).reshape((-1, 2))
-        # Adding (0,0) to first lower control points to assure continuity at (0,0)
-        # The last control point is (1, -dz_te)
-        lower_control_points_as_list = [0, 0] + lower_points + [1, -dz_te]
-        self.lower_control_points = np.array(lower_control_points_as_list).reshape((-1, 2))
-
-        self.upper_surface = BezierCurve2D(self.upper_control_points)
-        self.lower_surface = BezierCurve2D(self.lower_control_points)
-
-        if not check_airfoil(self.upper_surface, self.lower_surface):
-            raise Exception("Invalid airfoil surface")
-
+    def __init__(self, parameters: list, shape=tuple[int,int]):
+        
+        self.parameters = parameters
+        self.shape = shape
+        upper_control_points, lower_control_points = BezierAirfoil._map_parameters_to_control_points(parameters, shape)
+        self.upper_control_points = upper_control_points
+        self.lower_control_points = lower_control_points
+        self.upper_surface = BezierCurve.from_nodes(self.upper_control_points)
+        self.lower_surface = BezierCurve.from_nodes(self.lower_control_points)
 
     @staticmethod
-    def random(sigma=0.07, mu=0.15, free_variables_shape=(4,4), try_count=1000):
-        shape_condition, shape_condition_desc = lambda x: x % 2 == 0, 'even number'
-        
-        if(free_variables_shape[0] < 2 or free_variables_shape[1] < 2):
-            raise Exception("Invalid control points shape")
-        if(not shape_condition(free_variables_shape[0]) or not shape_condition(free_variables_shape[1])):
-            raise Exception(f"Control points shape must satisfy shape_condition: {shape_condition_desc}")
-        
-        upper_points_x = np.sort(np.random.uniform(0.0, 1.0, free_variables_shape[0]))
-        upper_points_y = sigma*np.random.randn(free_variables_shape[0])+mu
+    def parameters_required_for_shape(shape=tuple[int,int]):
+        return 2 * shape[0] + 2 * shape[1] - 8
 
-        lower_points_x = np.sort(np.random.uniform(0.0, 1.0, free_variables_shape[1]))
-        lower_points_y = sigma*np.random.randn(free_variables_shape[1])-mu
-
-        dz_te = np.random.uniform(0.0, 0.001)
-
-        # Setting point to 0 to assure leading edge is smooth at (0,0)
-        upper_points_x[0] = 0
-        lower_points_x[0] = 0
-
-        upper_surface_points = list(zip(upper_points_x, upper_points_y))
-        lower_surface_points = list(zip(lower_points_x, lower_points_y))
-
-        upper_points = np.array(upper_surface_points).reshape(-1).tolist()
-        lower_points = np.array(lower_surface_points).reshape(-1).tolist()
-        
-        airfoil = None
-        for i in range(try_count):
-            try:
-                airfoil = BezierAirfoil(upper_points, lower_points, dz_te)
-            except Exception as e:
-                logging.warning(f"Could not generate valid airfoil: {e}")
-                continue
-            break
-        if airfoil is not None:
-            return airfoil
-        raise Exception("Could not generate valid airfoil")
+    @staticmethod
+    def get_random_airfoil(mean=0.1, range_size=0.07, shape=(6,6), max_try_count=1000):
+        parameters = BezierAirfoil.random_params_initializer(mean=mean, range_size=range_size, shape=shape, max_try_count=max_try_count)
+        return BezierAirfoil(parameters=parameters, shape=shape)
     
     @staticmethod
-    def get_random(sigma=0.07, mu=0.15, free_variables_shape=(4,4), try_count=1000):
-        shape_condition, shape_condition_desc = lambda x: x % 2 == 0, 'even number'
+    def random_params_initializer(mean=0.1, range_size=0.07, shape=(6,6), max_try_count=1000):
+        for i in  range(max_try_count):
+            z_te = np.random.uniform(0.0, 0.01) # Based on Bézier Parsec method
+            dz_te = np.random.uniform(0.0, 0.001) # Based on Bézier Parsec method
+
+            x_upper = np.sort(np.random.uniform(0.0, 1.0, shape[0] - 3))
+            x_lower = np.sort(np.random.uniform(0.0, 1.0, shape[1] - 3))
+
+            y_upper = list(np.random.uniform(0.0, range_size, shape[0] - 2) + mean)
+            y_lower = list(np.random.uniform(0.0, -range_size, shape[1] - 2) - mean)
+            
+            first_y_upper = y_upper.pop(0) * 0.5 # To reduce the range of the first control point
+            first_y_lower = y_lower.pop(0) * 0.5 # To reduce the range of the first control point
+
+            parameters = [z_te, dz_te] + [first_y_upper, first_y_lower] + list(x_upper) + list(y_upper) + list(x_lower) + list(y_lower)
+            
+            if(BezierAirfoil.check_parameters(parameters, shape)):
+                return parameters
+        raise Exception("Could not generate valid airfoil")
+
+    @staticmethod
+    def check_parameters(parameters: list, shape=tuple[int,int]):
+        try:
+            BezierAirfoil._map_parameters_to_control_points(parameters, shape)
+            return True
+        except Exception as e:
+            return False
+
+    @staticmethod
+    def _map_parameters_to_control_points(parameters: list, shape=tuple[int,int]):
+        if (shape[0] < 3 or shape[1] < 3):
+            raise Exception("Invalid shape, must be at least (3,3)")
+        if(len(parameters) != BezierAirfoil.parameters_required_for_shape(shape)):
+            raise Exception(f"Invalid number of parameters for shape {shape}, expected {BezierAirfoil.parameters_required_for_shape(shape)} got {len(parameters)}")
         
-        if(free_variables_shape[0] < 2 or free_variables_shape[1] < 2):
-            raise Exception("Invalid control points shape")
-        if(not shape_condition(free_variables_shape[0]) or not shape_condition(free_variables_shape[1])):
-            raise Exception(f"Control points shape must satisfy shape_condition: {shape_condition_desc}")
+        parameters_copy = parameters.copy()
+        z_te = parameters_copy.pop(0)
+        dz_te = parameters_copy.pop(0)
+        y_upper_1 = parameters_copy.pop(0)
+        y_lower_1 = parameters_copy.pop(0)
+        upper_points_to_get = 2*(shape[0] - 3)
+        lower_points_to_get = 2*(shape[1] - 3)
         
-        upper_points_x = np.sort(np.random.uniform(0.0, 1.0, free_variables_shape[0]))
-        upper_points_y = sigma*np.random.randn(free_variables_shape[0])+mu
+        upper_points = parameters_copy[:upper_points_to_get]
+        lower_points = parameters_copy[upper_points_to_get:upper_points_to_get+lower_points_to_get]
 
-        lower_points_x = np.sort(np.random.uniform(0.0, 1.0, free_variables_shape[1]))
-        lower_points_y = sigma*np.random.randn(free_variables_shape[1])-mu
-
-        dz_te = np.random.uniform(0.0, 0.001)
-
-        # Setting point to 0 to assure leading edge is smooth at (0,0)
-        upper_points_x[0] = 0
-        lower_points_x[0] = 0
-
-        upper_surface_points = list(zip(upper_points_x, upper_points_y))
-        lower_surface_points = list(zip(lower_points_x, lower_points_y))
-
-        upper_points = np.array(upper_surface_points).reshape(-1).tolist()
-        lower_points = np.array(lower_surface_points).reshape(-1).tolist()
+        # upper control points contains a list of x2, x3, x4, ... y2, y3, y4 ... yn coordinates        
         
-        airfoil = None
-        for i in range(try_count):
-            try:
-                airfoil = BezierAirfoil(upper_points, lower_points, dz_te)
-            except Exception as e:
-                logging.warning(f"Could not generate valid airfoil: {e}")
-                continue
-            break
-        if airfoil is not None:
-            return np.concatenate((upper_points, lower_points, [dz_te]))
+        # Adding (0,0) to first upper control points to assure continuity at (0,0)
+        # Adding (0,_) to the second upper control point to assure slope at (0,0)
+        # The last control point is (1, z_te+dz_te)
+        upper_points = [0, 0] + upper_points[:upper_points_to_get//2] + [1] + [0, y_upper_1] + upper_points[upper_points_to_get//2:] + [z_te+dz_te]
+        upper_control_points = np.asfortranarray(splitListInHalf(upper_points))
 
+        # Adding (0,0) to first lower control points to assure continuity at (0,0)
+        # Adding (0,_) to the second lower control point to assure slope at (0,0)
+        # The last control point is (1, z_te-dz_te)
+        lower_points = [0, 0] + lower_points[:lower_points_to_get//2] + [1] + [0, y_lower_1] + lower_points[lower_points_to_get//2:] + [z_te-dz_te]
+        lower_control_points = np.asfortranarray(splitListInHalf(lower_points))
+
+        upper_surface = BezierCurve.from_nodes(upper_control_points)
+        lower_surface = BezierCurve.from_nodes(lower_control_points)
+
+        if not check_surfaces(upper_surface, lower_surface):
+            raise Exception("Invalid airfoil surface")
+
+        return upper_control_points, lower_control_points
 
     def plot(self, ax):
         t = np.linspace(0, 1, 100)
-        upper_points = self.upper_surface.evaluate_at_t(t)
-        lower_points = self.lower_surface.evaluate_at_t(t)
-        upper_control_points = self.upper_surface.control_points
-        lower_control_points = self.lower_surface.control_points
+        upper_points = self.upper_surface.evaluate_multi(t)
+        lower_points = self.lower_surface.evaluate_multi(t)
+        upper_control_points = self.upper_surface.nodes
+        lower_control_points = self.lower_surface.nodes
 
-        ax.plot(upper_points[:, 0], upper_points[:, 1], color='b', label='Upper surface')
-        ax.plot(lower_points[:, 0], lower_points[:, 1], color='r', label='Lower surface')
-        ax.scatter(upper_control_points[:,0], upper_control_points[:,1], ec='b', fc='none', label='Upper control points')
-        ax.scatter(lower_control_points[:,0], lower_control_points[:,1], ec='r', fc='none', label='Lower control points')
-        ax.plot(upper_control_points[:,0], upper_control_points[:,1], c='b', linestyle='--', alpha=0.5)
-        ax.plot(lower_control_points[:,0], lower_control_points[:,1], c='r', linestyle='--', alpha=0.5)
+        ax.plot(upper_points[0], upper_points[1], color='b', label='Upper surface')
+        ax.plot(lower_points[0], lower_points[1], color='r', label='Lower surface')
+        ax.scatter(upper_control_points[0], upper_control_points[1], ec='b', fc='none', label='Upper control points')
+        ax.scatter(lower_control_points[0], lower_control_points[1], ec='r', fc='none', label='Lower control points')
+        ax.plot(upper_control_points[0], upper_control_points[1], c='b', linestyle='--', alpha=0.5)
+        ax.plot(lower_control_points[0], lower_control_points[1], c='r', linestyle='--', alpha=0.5)
         ax.set_title('Airfoil with Bézier parametrization')
         ax.legend()
-        plt.show()
 
-    def get_coordinates(self):
+    def get_coordinates(self, n_points=300):
         """
         This function returns the coordinates of an airfoil in the format required by XFoil.
         """
         coordinates = []
 
-        t = np.linspace(0, 1, 100)
-        t_reversed = np.linspace(1, 0, 100)
-        upper_points = self.upper_surface.evaluate_at_t(t_reversed)
-        lower_points = self.lower_surface.evaluate_at_t(t)
-
-        for coordinate in upper_points:
-            coordinates.append([coordinate[0], coordinate[1]])
-        for coordinate in lower_points:
-            coordinates.append([coordinate[0], coordinate[1]])
+        t = np.linspace(0, 1, n_points//2 + 1)
+        t_reversed = np.linspace(1, 0, n_points//2)
+        upper_points = self.upper_surface.evaluate_multi(t_reversed)
+        lower_points = self.lower_surface.evaluate_multi(t)
         
+        # Dropping first point because it contains the leading edge twice
+        for x,y in zip(upper_points[0], upper_points[1]):
+            coordinates.append([x,y])
+        for x,y in zip(lower_points[0], lower_points[1]):
+            if (x == 0.0):
+                continue
+            coordinates.append([x,y])
         return coordinates
 
-def ccw(A, B, C):
-    return (C[1]-A[1])*(B[0]-A[0]) > (B[1]-A[1])*(C[0]-A[0])
 
+def splitListInHalf(list):
+    half = len(list)//2
+    return [list[:half], list[half:]]
 
-def intersect(A, B, C, D):
-    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
-
-
-def check_airfoil(upper_surface: BezierCurve2D, lower_surface: BezierCurve2D):
+def check_surfaces(upper_surface: BezierCurve, lower_surface: BezierCurve):
     """
     Checks for intersections and incorrect slopes at trailing edge
     :param name:
@@ -153,63 +141,87 @@ def check_airfoil(upper_surface: BezierCurve2D, lower_surface: BezierCurve2D):
     """
     min_angle = 60 * np.pi / 180
 
-    n = 150
-    upper_points = upper_surface.evaluate_at_t(np.linspace(0, 1, n))
-    lower_points = lower_surface.evaluate_at_t(np.linspace(0, 1, n))
-    x_upper = upper_points[:, 0]
-    x_lower = lower_points[:, 0]
-
-    y_upper = upper_points[:, 1]
-    y_lower = lower_points[:, 1]
-
     # Check angle at leading edge
-    if (y_upper[1] - y_upper[0]) < np.tan(min_angle) * (x_upper[1] - x_upper[0]):
+    upper_surface_tangent_vector = upper_surface.evaluate_hodograph(0)
+    lower_surface_tangent_vector = lower_surface.evaluate_hodograph(0)
+    if (upper_surface_tangent_vector[1]) < np.tan(min_angle) * upper_surface_tangent_vector[0]:
         logging.debug("Upper surface slope at leading edge is too small")
         return False
-    if (y_lower[1] - y_lower[0]) > -np.tan(min_angle) * (x_lower[1] - x_lower[0]):
+    if lower_surface_tangent_vector[1] > - np.tan(min_angle) * lower_surface_tangent_vector[0]:
         logging.debug("Lower surface slope at leading edge is too small")
         return False
 
-    # Checks intersection between curves
-    for i in range(n-1):
-        for j in range(n-1):
-            a = (x_upper[i], y_upper[i])
-            b = (x_upper[i + 1], y_upper[i + 1])
-            c = (x_lower[j], y_lower[j])
-            d = (x_lower[j + 1], y_lower[j + 1])
-            if intersect(a, b, c, d):
-                logging.debug("Upper and lower surfaces intersect")
-                return False
-
+    intersections = upper_surface.intersect(lower_surface)
+    # Can only intersect at endpoints
+    if (intersections.shape[1] > 2):
+        logging.debug("Upper and lower surfaces intersect")
+        return False
+    
     # Checks intersection with itself
-    for i in range(n-1):
-        for j in range(n-1):
-            if j - i > 1:
-                a = (x_upper[i], y_upper[i])
-                a1 = (x_lower[i], y_lower[i])
-                b = (x_upper[i + 1], y_upper[i + 1])
-                b1 = (x_lower[i + 1], y_lower[i + 1])
-                c = (x_upper[j], y_lower[j])
-                c1 = (x_lower[j], y_lower[j])
-                d = (y_upper[j + 1], y_lower[j + 1])
-                d1 = (x_lower[j + 1], y_lower[j + 1])
-                if intersect(a, b, c, d) or intersect(a1, b1, c1, d1):
-                    logging.debug("Upper or lower surface intersects with itself")
-                    return False
+    intersections = upper_surface.self_intersections()
+    if (intersections.shape[1] > 0):
+        logging.debug("Upper surface intersects with itself")
+        return False
+    
+    intersections = lower_surface.self_intersections()
+    if (intersections.shape[1] > 0):
+        logging.debug("Lower surface intersects with itself")
+        return False
 
-    # # Using y = ax*b for endpoints to find camber line
-    # a = (y_upper[-1] - y_upper[0]) / (x_upper[-1] - x_upper[0])
-    # b = (y_upper[0] * x_upper[-1] - y_upper[-1] * x_upper[0]) / (x_upper[-1] - x_upper[0])
-    # camber_line = lambda x: a * x + b
-    # print(f'camber line = {a}x + {b}')
-    # # Checks if upper points are above camber line and if lower points are below camber line
-    # for i, x in enumerate(x_upper):
-    #     if y_upper[i] < camber_line(x):
-    #         logging.debug("Upper surface is below camber line")
-    #         return False
-    # for i, x in enumerate(x_lower):
-    #     print(f'x={x}, y={y_lower[i]}, camber={camber_line(x)}')
-    #     if y_lower[i] > camber_line(x):
-    #         logging.debug("Lower surface is above camber line")
-    #         return False
     return True
+
+if __name__ == "__main__":
+    from matplotlib import pyplot as plt
+    import sys
+    import logging
+    import numpy as np
+
+    log_level = logging.DEBUG 
+    logging.basicConfig(
+        level=log_level,
+        stream=sys.stdout
+    )
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+    shape=(6,6)
+    parameters = [
+        0, #z_te
+        0, #dz_te
+        0.1411396509632579, # y_upper_1
+        -0.06040774190578092, # y_lower_1
+        0.31520572542813763, # x_2
+        0.39109318267809434, # x_3
+        0.5709148615746626, # x_4
+        0.34363932259611313, # y_2
+        0.0424359669691409, # y_3
+        0.07410454920970207, # y_4
+        0.4464414301191849, # x_2
+        0.47325435804708416, # x_3
+        0.3638052466788326, # x_4
+        -0.09693677277639359, # y_2
+        -0.11485557171942154, # y_3
+        0.014626604247552747, # y_4
+    ]
+    dz_te = 0
+
+    airfoil = BezierAirfoil(
+        parameters=parameters,
+        shape=shape,
+        )
+
+    # Random init
+    # parameters = BezierAirfoil.get_random_parameters(
+    #     mean=0.1,
+    #     range_size=0.07,
+    #     shape=shape,
+    #     max_try_count=1000
+    # )
+
+    # airfoil = BezierAirfoil(
+    #     parameters=parameters,
+    #     shape=shape,
+    #     )
+
+    fix, ax = plt.subplots()
+    airfoil.plot(ax)
+    plt.show()
+    # print(airfoil.get_coordinates())

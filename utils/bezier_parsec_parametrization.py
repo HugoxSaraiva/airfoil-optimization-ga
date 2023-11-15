@@ -169,7 +169,7 @@ class BezierParsecAirfoil:
         return coordinates
 
     @staticmethod
-    def from_random(try_limit=10000):
+    def get_random_airfoil(try_limit=10000):
         r_t = None
         for i in range(try_limit):
             x_t = np.random.uniform(0.15, 0.4)
