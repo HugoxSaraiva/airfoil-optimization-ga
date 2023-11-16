@@ -63,9 +63,23 @@ class BezierAirfoil:
         x_lower_bounds = [0.0, 1.0]
         y_upper_bounds = [-0.1, 0.2]
         y_lower_bounds = [-0.2, 0.1]
-        upper_bounds = [z_te_bounds[1], dz_te_bounds[1], y_upper_1_bounds[1], y_lower_1_bounds[1]] + [x_upper_bounds[1]] * (shape[0] - 3) + [y_upper_bounds[1]] * (shape[0] - 2)  + [x_lower_bounds[1]] * (shape[1] - 3) + [y_lower_bounds[1]] * (shape[1] - 2)
+        upper_bounds = [z_te_bounds[1], 
+                        dz_te_bounds[1], 
+                        y_upper_1_bounds[1], 
+                        y_lower_1_bounds[1]] \
+                    + [x_upper_bounds[1]] * (shape[0] - 3) \
+                    + [y_upper_bounds[1]] * (shape[0] - 3) \
+                    + [x_lower_bounds[1]] * (shape[1] - 3) \
+                    + [y_lower_bounds[1]] * (shape[1] - 3)
 
-        lower_bounds = [z_te_bounds[0], dz_te_bounds[0], y_upper_1_bounds[0], y_lower_1_bounds[0]] + [x_upper_bounds[0]] * (shape[0] - 3) + [y_upper_bounds[0]] * (shape[0] - 2) + [x_lower_bounds[0]] * (shape[1] - 3) + [y_lower_bounds[0]] * (shape[1] - 2)
+        lower_bounds = [z_te_bounds[0],
+                        dz_te_bounds[0],
+                        y_upper_1_bounds[0],
+                        y_lower_1_bounds[0]] \
+                    + [x_upper_bounds[0]] * (shape[0] - 3) \
+                    + [y_upper_bounds[0]] * (shape[0] - 3) \
+                    + [x_lower_bounds[0]] * (shape[1] - 3) \
+                    + [y_lower_bounds[0]] * (shape[1] - 3)
         return upper_bounds, lower_bounds
 
     @staticmethod

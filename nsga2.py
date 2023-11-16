@@ -15,7 +15,7 @@ from utils.bezier_parametrization import BezierAirfoil
 from utils.xfoil_adapter import XFoilAdapter
 
 creator.create("FitnessMulti", base.Fitness, weights=(-1.0, 1.0))
-creator.create("Individual", list, fitness=creator.FitnessMulti)
+creator.create("Individual", array.array, typecode='d', fitness=creator.FitnessMulti)
 
 toolbox = base.Toolbox()
 
@@ -28,7 +28,7 @@ CXPB = 0.9
 
 # Problem definition
 # Functions zdt1, zdt2, zdt3, zdt6 have bounds [0, 1]
-BOUND_UP, BOUND_LOW  = 1, 0
+BOUND_UP, BOUND_LOW  = BezierAirfoil.get_bounds(CONTROL_POINTS_SHAPE)
 
 # Functions zdt4 has bounds x1 = [0, 1], xn = [-5, 5], with n = 2, ..., 10
 # BOUND_LOW, BOUND_UP = [0.0] + [-5.0]*9, [1.0] + [5.0]*9
@@ -65,7 +65,7 @@ def evaluate(individual):
             print(e)
             return 1000, 0
 
-toolbox.register("attr_float", BezierAirfoil.random_params_initializer, mean=0.1, range_size=0.07, shape=CONTROL_POINTS_SHAPE)
+toolbox.register("attr_float", uniform, BOUND_LOW, BOUND_UP, NDIM)
 toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.attr_float)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 

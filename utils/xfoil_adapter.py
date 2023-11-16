@@ -9,12 +9,13 @@ class XFoilAdapter():
     """
     Adapter class for xfoil to work with bezier parsec airfoils
     """
-    def __init__(self):
+    def __init__(self, timeout=5):
         self.airfoils = []
         self.temp_files = []
         self.reynolds = None
         self.mach = None
         self.alphas = None
+        self.timeout = timeout
 
     def __enter__(self):
         return self
@@ -51,7 +52,8 @@ class XFoilAdapter():
             reynolds=self.reynolds,
             mach=self.mach,
             alphas=self.alphas,
-            disable_graphics=True
+            disable_graphics=True,
+            process_timeout=self.timeout
         )
         xfoil_object.run()
         number_of_airfoils = len(self.airfoils)
