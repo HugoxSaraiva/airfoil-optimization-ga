@@ -3,6 +3,7 @@ import numpy as np
 import math
 import logging
 from bezier.curve import Curve as BezierCurve
+from bezier.hazmat.curve_helpers import get_curvature, evaluate_hodograph
 
 class BezierAirfoil:
     def __init__(self, parameters: list, shape=tuple[int,int]):
@@ -22,8 +23,8 @@ class BezierAirfoil:
         return 2 * shape[0] + 2 * shape[1] - 8
 
     @staticmethod
-    def get_random_airfoil(mean=0.1, range_size=0.07, shape=(6,6), max_try_count=1000):
-        parameters = BezierAirfoil.random_params_initializer(mean=mean, range_size=range_size, shape=shape, max_try_count=max_try_count)
+    def get_random_airfoil(shape=(6,6), max_try_count=1000):
+        parameters = BezierAirfoil.random_params_initializer(shape=shape, max_try_count=max_try_count)
         return BezierAirfoil(parameters=parameters, shape=shape)
     
     @staticmethod
@@ -33,19 +34,20 @@ class BezierAirfoil:
         return BezierAirfoil(parameters=parameters, shape=shape)
 
     @staticmethod
-    def random_params_initializer(mean=0.1, range_size=0.07, shape=(6,6), max_try_count=1000):
+    def random_params_initializer(shape=(6,6), max_try_count=1000):
+        z_te_bounds, dz_te_bounds, y_upper_1_bounds, y_lower_1_bounds, x_upper_bounds, x_lower_bounds, y_upper_bounds, y_lower_bounds = BezierAirfoil._get_bounds_components(shape=shape)
         for i in  range(max_try_count):
-            z_te = np.random.uniform(0.0, 0.01) # Based on Bézier Parsec method
-            dz_te = np.random.uniform(0.0, 0.001) # Based on Bézier Parsec method
+            z_te = np.random.uniform(z_te_bounds[0], z_te_bounds[0]) # Based on Bézier Parsec method
+            dz_te = np.random.uniform(dz_te_bounds[1], dz_te_bounds[1]) # Based on Bézier Parsec method
 
-            x_upper = np.sort(np.random.uniform(0.0, 1.0, shape[0] - 3))
-            x_lower = np.sort(np.random.uniform(0.0, 1.0, shape[1] - 3))
+            x_upper = np.sort(np.random.uniform(x_upper_bounds[0], x_upper_bounds[1], shape[0] - 3))
+            x_lower = np.sort(np.random.uniform(x_lower_bounds[0], x_lower_bounds[1], shape[1] - 3))
 
-            y_upper = list(np.random.uniform(0.0, range_size, shape[0] - 2) + mean)
-            y_lower = list(np.random.uniform(0.0, -range_size, shape[1] - 2) - mean)
+            y_upper = list(np.random.uniform(y_upper_bounds[0], y_upper_bounds[1], shape[0] - 3))
+            y_lower = list(np.random.uniform(y_lower_bounds[0], y_lower_bounds[1], shape[1] - 3))
             
-            first_y_upper = y_upper.pop(0) * 0.5 # To reduce the range of the first control point
-            first_y_lower = y_lower.pop(0) * 0.5 # To reduce the range of the first control point
+            first_y_upper = np.random.uniform(y_upper_1_bounds[0], y_upper_1_bounds[1])
+            first_y_lower = np.random.uniform(y_lower_1_bounds[0], y_lower_1_bounds[1])
 
             parameters = [z_te, dz_te] + [first_y_upper, first_y_lower] + list(x_upper) + list(y_upper) + list(x_lower) + list(y_lower)
             
@@ -54,15 +56,22 @@ class BezierAirfoil:
         raise Exception("Could not generate valid airfoil")
     
     @staticmethod
-    def get_bounds(shape=(6,6)):
-        z_te_bounds = [0.0, 0.1]
+    def _get_bounds_components(shape=(6,6)):
+        z_te_bounds = [-0.05, 0.05]
         dz_te_bounds = [0.0, 0.01]
-        y_upper_1_bounds = [0.0, 0.5]
-        y_lower_1_bounds = [-0.5, 0.0]
-        x_upper_bounds = [0.0, 1.0]
-        x_lower_bounds = [0.0, 1.0]
-        y_upper_bounds = [-0.1, 0.2]
-        y_lower_bounds = [-0.2, 0.1]
+        y_upper_1_bounds = [0.0, 0.2]
+        y_lower_1_bounds = [-0.2, 0.0]
+        x_upper_bounds = [0.1, 0.9]
+        x_lower_bounds = [0.1, 0.9]
+        y_upper_bounds = [0, 0.3]
+        y_lower_bounds = [-0.3, 0]
+        return z_te_bounds, dz_te_bounds, y_upper_1_bounds, y_lower_1_bounds, x_upper_bounds, x_lower_bounds, y_upper_bounds, y_lower_bounds
+
+
+    @staticmethod
+    def get_bounds(shape=(6,6)):
+        z_te_bounds, dz_te_bounds, y_upper_1_bounds, y_lower_1_bounds, x_upper_bounds, x_lower_bounds, y_upper_bounds, y_lower_bounds = BezierAirfoil._get_bounds_components(shape=shape)
+        
         upper_bounds = [z_te_bounds[1], 
                         dz_te_bounds[1], 
                         y_upper_1_bounds[1], 
@@ -137,6 +146,8 @@ class BezierAirfoil:
         upper_control_points = self.upper_surface.nodes
         lower_control_points = self.lower_surface.nodes
 
+        self.upper_surface.plot(100, ax=ax, color='b', )
+        self.lower_surface.plot(100, ax=ax, color='r', )
         ax.plot(upper_points[0], upper_points[1], color='b', label='Upper surface')
         ax.plot(lower_points[0], lower_points[1], color='r', label='Lower surface')
         ax.scatter(upper_control_points[0], upper_control_points[1], ec='b', fc='none', label='Upper control points')
@@ -144,6 +155,8 @@ class BezierAirfoil:
         ax.plot(upper_control_points[0], upper_control_points[1], c='b', linestyle='--', alpha=0.5)
         ax.plot(lower_control_points[0], lower_control_points[1], c='r', linestyle='--', alpha=0.5)
         ax.set_title('Airfoil with Bézier parametrization')
+        ax.set_xlim([-0.1, 1.1])
+        ax.set_ylim([-0.5, 0.5])
         ax.legend()
 
     def get_coordinates(self, n_points=300):
@@ -166,7 +179,24 @@ class BezierAirfoil:
             coordinates.append([x,y])
         return coordinates
 
-
+    def get_general_info(self):
+        # Getting curvature at the leading edge
+        result = {}
+        for name, surface in zip(['Upper', 'Lower'], [self.upper_surface, self.lower_surface]):    
+            t = 0
+            nodes = surface.nodes
+            tangent_vector = evaluate_hodograph(t, nodes)
+            curvature = get_curvature(nodes, tangent_vector, t)
+            print(f"{name} surface")
+            print(f"Curvature at leading edge: {curvature}")
+            result[name] = {
+                'curvature': curvature,
+                'tangent_vector': tangent_vector,
+                'derivative': get_curve_derivative(surface).evaluate(0.0),
+                'second_derivative': get_curve_derivative(get_curve_derivative(surface)).evaluate(0.0),
+            }
+        return result
+    
 def splitListInHalf(list):
     half = len(list)//2
     return [list[:half], list[half:]]
@@ -208,6 +238,17 @@ def check_surfaces(upper_surface: BezierCurve, lower_surface: BezierCurve):
 
     return True
 
+def get_curve_derivative(curve: BezierCurve) -> BezierCurve:
+    """
+    Returns the derivative of a curve
+    """
+    nodes = curve.nodes.copy()
+    degree = curve.degree
+    for i in range(degree):
+        nodes[:,i] = (degree) * (nodes[:,i+1] - nodes[:,i])
+    nodes = nodes[:,:-1]
+    return BezierCurve.from_nodes(nodes)
+
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
     import sys
@@ -246,19 +287,19 @@ if __name__ == "__main__":
         )
 
     # Random init
-    # parameters = BezierAirfoil.get_random_parameters(
-    #     mean=0.1,
-    #     range_size=0.07,
-    #     shape=shape,
-    #     max_try_count=1000
-    # )
+    parameters = BezierAirfoil.random_params_initializer(
+        shape=shape,
+        max_try_count=1000
+    )
 
-    # airfoil = BezierAirfoil(
-    #     parameters=parameters,
-    #     shape=shape,
-    #     )
+    airfoil = BezierAirfoil(
+        parameters=parameters,
+        shape=shape,
+        )
 
     fix, ax = plt.subplots()
     airfoil.plot(ax)
     plt.show()
+    from pprint import pprint
+    pprint(airfoil.get_general_info())
     # print(airfoil.get_coordinates())

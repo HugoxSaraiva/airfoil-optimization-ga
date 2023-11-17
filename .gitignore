@@ -1,4 +1,4 @@
 .venv
 __pycache__
-checkpoint_name_*
+./checkpoint_name_*
 tmp_*

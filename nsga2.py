@@ -13,12 +13,14 @@ import pickle
 import array
 from utils.bezier_parametrization import BezierAirfoil
 from utils.xfoil_adapter import XFoilAdapter
+from multiprocessing import Pool
 
 creator.create("FitnessMulti", base.Fitness, weights=(-1.0, 1.0))
 creator.create("Individual", array.array, typecode='d', fitness=creator.FitnessMulti)
 
 toolbox = base.Toolbox()
 
+PARALEL_PROCESSES = 8
 SEED = 42
 CONTROL_POINTS_SHAPE=(6,6)
 FREQ = 10
@@ -43,29 +45,32 @@ def uniform(low, up, size=None):
         return [random.uniform(a, b) for a, b in zip([low] * size, [up] * size)]
 
 def evaluate(individual):
-    with XFoilAdapter() as xfoil:
-        # xfoil.set_airfoils(airfoils=[airfoil])
-        # xfoil.set_run_condition(
-        #     reynolds=3e6,
-        #     mach=0,
-        #     alphas=[8],
-        # )
+    with XFoilAdapter(timeout=12) as xfoil:
         try:
             airfoil = BezierAirfoil(individual, shape=CONTROL_POINTS_SHAPE)
-            # results = xfoil.run()
-            # # We have only one run, so we can just take the first element
-            # run_results = results[0][0].get('result', None)
-            # print(run_results)
-            # if run_results is None:
-            #     return 1000, 0
-            # cl = run_results['CL'][0]
-            # cd = run_results['CD'][0]
-            return individual[0], individual[1]
+            xfoil.set_airfoils(airfoils=[airfoil])
+            xfoil.set_run_condition(
+                reynolds=3e6,
+                mach=0,
+                alphas=[8],
+            )
+            results = xfoil.run()
+            # We have only one run, so we can just take the first element
+            run_results = results[0][0].get('result', None)
+            if run_results is None:
+                return 1000, 0
+            cl = run_results['CL'][0]
+            cd = run_results['CD'][0]
+            return cd, cl
         except Exception as e:
             print(e)
             return 1000, 0
 
-toolbox.register("attr_float", uniform, BOUND_LOW, BOUND_UP, NDIM)
+def distance(individual):
+    """A distance function to the feasibility region."""
+    return (individual[0] - 5.0)**2
+
+toolbox.register("attr_float", BezierAirfoil.random_params_initializer, shape=CONTROL_POINTS_SHAPE)
 toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.attr_float)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
@@ -76,7 +81,9 @@ toolbox.register("select", tools.selNSGA2)
 
 
 
-def main(seed=None, checkpoint=None):
+def main(pool=None, seed=None, checkpoint=None, max_gen=NGEN):
+    if pool is not None:
+        toolbox.register("map", pool.map)
     if checkpoint:
         # A file name has been given, then load the data from the file
         try:
@@ -120,7 +127,7 @@ def main(seed=None, checkpoint=None):
     stats.register("max", numpy.max, axis=0)
 
     # Begin the generational process
-    for gen in range(start_gen, NGEN):
+    for gen in range(start_gen, max_gen):
         # Vary the population
         offspring = tools.selTournamentDCD(population, len(population))
         offspring = [toolbox.clone(ind) for ind in offspring]
@@ -156,7 +163,7 @@ def main(seed=None, checkpoint=None):
 
     return population, logbook
 
-population, stats = main(seed=SEED)
-print(stats)
-# print("Convergence: ", convergence(pop, optimal_front))
-# print("Diversity: ", diversity(pop, optimal_front[0], optimal_front[-1]))
+if __name__ == "__main__":
+    with Pool(PARALEL_PROCESSES) as pool:
+        population, stats = main(seed=SEED, pool=pool, max_gen=NGEN)
+        print(stats)
