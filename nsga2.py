@@ -11,7 +11,8 @@ from deap import creator
 from deap import tools
 import pickle
 import array
-from utils.bezier_parametrization import BezierAirfoil
+from utils.bezier_parametrization import BezierAirfoilNSGA2Adapter
+from utils.bezier_parsec_parametrization import BezierParsecAirfoilNSGA2Adapter
 from utils.xfoil_adapter import XFoilAdapter
 from multiprocessing import Pool
 
@@ -28,15 +29,13 @@ NGEN = 150
 MU = 100
 CXPB = 0.9
 
+# Register the airfoil parametrization class
+toolbox.register("airfoil", BezierAirfoilNSGA2Adapter, shape=CONTROL_POINTS_SHAPE)
+# toolbox.register("airfoil", BezierParsecAirfoilNSGA2Adapter)
+
 # Problem definition
-# Functions zdt1, zdt2, zdt3, zdt6 have bounds [0, 1]
-BOUND_UP, BOUND_LOW  = BezierAirfoil.get_bounds(CONTROL_POINTS_SHAPE)
-
-# Functions zdt4 has bounds x1 = [0, 1], xn = [-5, 5], with n = 2, ..., 10
-# BOUND_LOW, BOUND_UP = [0.0] + [-5.0]*9, [1.0] + [5.0]*9
-
-# Functions zdt1, zdt2, zdt3 have 30 dimensions, zdt4 and zdt6 have 10
-NDIM = BezierAirfoil.parameters_required_for_shape(CONTROL_POINTS_SHAPE)
+BOUND_UP, BOUND_LOW  = toolbox.airfoil().get_bounds()
+NDIM = len(BOUND_UP)
 
 def uniform(low, up, size=None):
     try:
@@ -47,30 +46,32 @@ def uniform(low, up, size=None):
 def evaluate(individual):
     with XFoilAdapter(timeout=12) as xfoil:
         try:
-            airfoil = BezierAirfoil(individual, shape=CONTROL_POINTS_SHAPE)
-            xfoil.set_airfoils(airfoils=[airfoil])
-            xfoil.set_run_condition(
-                reynolds=3e6,
-                mach=0,
-                alphas=[8],
-            )
-            results = xfoil.run()
+            airfoil = toolbox.airfoil().from_parameters(individual)
+            # xfoil.set_airfoils(airfoils=[airfoil])
+            # xfoil.set_run_condition(
+            #     reynolds=3e6,
+            #     mach=0,
+            #     alphas=[8],
+            # )
+            # results = xfoil.run()
             # We have only one run, so we can just take the first element
-            run_results = results[0][0].get('result', None)
-            if run_results is None:
-                return 1000, 0
-            cl = run_results['CL'][0]
-            cd = run_results['CD'][0]
-            return cd, cl
+            # run_results = results[0][0].get('result', None)
+            # if run_results is None:
+            #     return 1000, 0
+            # cl = run_results['CL'][0]
+            # cd = run_results['CD'][0]
+            # return cd, cl
+            info = airfoil.get_general_info()
+            return info['thickness']['max_value'], info['camber']['max_value']
         except Exception as e:
-            print(e)
+            print('Error:' , e)
             return 1000, 0
 
 def distance(individual):
     """A distance function to the feasibility region."""
     return (individual[0] - 5.0)**2
 
-toolbox.register("attr_float", BezierAirfoil.random_params_initializer, shape=CONTROL_POINTS_SHAPE)
+toolbox.register("attr_float", toolbox.airfoil().random_params_initializer)
 toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.attr_float)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
@@ -95,6 +96,9 @@ def main(pool=None, seed=None, checkpoint=None, max_gen=NGEN):
                 logbook = cp["logbook"]
                 random.setstate(cp["rndstate"])
                 np.random.set_state(cp["nprndstate"])
+                best_cl_individuals = cp["best_cl_individuals"]
+                best_cd_individuals = cp["best_cd_individuals"]
+                best_cl_o_cd_individuals = cp["best_cl_o_cd_individuals"]
         except FileNotFoundError:
             print("Checkpoint not found. Starting a new run.")
             return main(seed=seed)
@@ -114,6 +118,9 @@ def main(pool=None, seed=None, checkpoint=None, max_gen=NGEN):
 
         logbook = tools.Logbook()
         logbook.header = "gen", "evals", "std", "min", "avg", "max"
+        best_cl_individuals = [max(population, key=lambda ind: ind.fitness.values[1])]
+        best_cd_individuals = [min(population, key=lambda ind: ind.fitness.values[0])]
+        best_cl_o_cd_individuals = [max(population, key=lambda ind: ind.fitness.values[1] / ind.fitness.values[0])]
     stats = tools.Statistics(lambda ind: ind.fitness.values)
 
     # This is just to assign the crowding distance to the individuals
@@ -149,11 +156,25 @@ def main(pool=None, seed=None, checkpoint=None, max_gen=NGEN):
         population = toolbox.select(population + offspring, MU)
         pareto.update(population)
         record = stats.compile(population)
-        logbook.record(gen=gen, evals=len(invalid_ind), **record)
+        best_cl_individual = max(population, key=lambda ind: ind.fitness.values[1])
+        best_cd_individual = min(population, key=lambda ind: ind.fitness.values[0])
+        best_cl_o_cd_individual = max(population, key=lambda ind: ind.fitness.values[1] / ind.fitness.values[0])
+        best_cl_individuals.append(best_cl_individual)
+        best_cd_individuals.append(best_cd_individual)
+        best_cl_o_cd_individuals.append(best_cl_o_cd_individual)
+        logbook.record(
+            gen=gen, 
+            evals=len(invalid_ind),
+            **record)
         print(logbook.stream)
         if gen % FREQ == 0 or gen == NGEN - 1:
             # Fill the dictionary using the dict(key=value[, ...]) constructor
-            cp = dict(population=population, generation=gen, pareto=pareto,
+            cp = dict(population=population, 
+                      generation=gen, 
+                      pareto=pareto, 
+                      best_cl_individuals=best_cl_individuals,
+                      best_cd_individuals=best_cd_individuals,
+                      best_cl_o_cd_individuals=best_cl_o_cd_individuals, 
                       logbook=logbook, rndstate=random.getstate(), nprndstate=np.random.get_state())
 
             with open(f"checkpoint_name_gen_{gen}.pkl", "wb") as cp_file:

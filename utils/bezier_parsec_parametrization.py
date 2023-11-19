@@ -2,6 +2,7 @@ import numpy as np
 import math
 from utils.bezier_curve import BezierCurve2D
 import matplotlib.pyplot as plt
+from functools import cached_property
 
 # Implementation of the Bezier-Parsec parametrization of airfoils described in "Bezier-PARSEC: An optimized aerofoil parameterization for design" doi:10.1016/j.advengsoft.2010.05.002
 
@@ -54,6 +55,116 @@ def bp_3333(
         camber_leading_edge_control_points,
         camber_trailing_edge_control_points
     )}
+
+
+class BezierParsecAirfoilNSGA2Adapter:
+    """
+    This class is used to adapt the BezierParsecAirfoil class to the NSGA2 algorithm
+    """
+    
+    ## NSGA2 methods
+    def random_params_initializer(self, max_try_count=1000):
+        r_le_bounds, alpha_te_bounds, beta_te_bounds, z_te_bounds, gamma_le_bounds, x_c_bounds, y_c_bounds, k_c_bounds, x_t_bounds, y_t_bounds, k_t_bounds, dz_te_bounds = self._get_bounds_components()
+        r_t = None
+        for i in range(max_try_count):
+            x_t = np.random.uniform(x_t_bounds[0], x_t_bounds[1])
+            y_t = np.random.uniform(y_t_bounds[0], y_t_bounds[1])
+            k_t = np.random.uniform(k_t_bounds[0], k_t_bounds[1])
+            r_le = np.random.uniform(r_le_bounds[0], r_le_bounds[1])
+            try:
+                r_t = get_rt(k_t=k_t, x_t=x_t, y_t=y_t, r_le=r_le)
+            except:
+                r_t = None
+            if r_t is not None:
+                break
+        if r_t is None:
+            return None
+        r_c = None
+        for i in range(max_try_count):    
+            alpha_te = np.random.uniform(alpha_te_bounds[0], alpha_te_bounds[1])
+            beta_te = np.random.uniform(beta_te_bounds[0], beta_te_bounds[1])
+            z_te = np.random.uniform(z_te_bounds[0], z_te_bounds[1])
+            gamma_le = np.random.uniform(gamma_le_bounds[0], gamma_le_bounds[1])
+            x_c = np.random.uniform(x_c_bounds[0], x_c_bounds[1])
+            y_c = np.random.uniform(y_c_bounds[0], y_c_bounds[1])
+            k_c = np.random.uniform(k_c_bounds[0], k_c_bounds[1])
+            dz_te = np.random.uniform(dz_te_bounds[0], dz_te_bounds[1])
+            try:
+                r_c = get_rc(k_c=k_c, y_c=y_c, gamma_le=gamma_le, alpha_te=alpha_te, z_te=z_te)
+            except:
+                r_c = None
+            if r_c is not None:
+                break
+        if r_c is not None:
+            return [r_le, alpha_te, beta_te, z_te, gamma_le, x_c, y_c, k_c, x_t, y_t, k_t, dz_te]
+        
+        raise Exception("Could not generate valid airfoil")
+    
+    def get_bounds(self):
+        r_le_bounds, alpha_te_bounds, beta_te_bounds, z_te_bounds, gamma_le_bounds, x_c_bounds, y_c_bounds, k_c_bounds, x_t_bounds, y_t_bounds, k_t_bounds, dz_te_bounds = self._get_bounds_components()
+        
+        upper_bounds = [
+                        r_le_bounds[1], 
+                        alpha_te_bounds[1], 
+                        beta_te_bounds[1], 
+                        z_te_bounds[1], 
+                        gamma_le_bounds[1],
+                        x_c_bounds[1],
+                        y_c_bounds[1],
+                        k_c_bounds[1],
+                        x_t_bounds[1],
+                        y_t_bounds[1],
+                        k_t_bounds[1],
+                        dz_te_bounds[1]
+        ]
+
+        lower_bounds = [
+                        r_le_bounds[0], 
+                        alpha_te_bounds[0], 
+                        beta_te_bounds[0], 
+                        z_te_bounds[0], 
+                        gamma_le_bounds[0],
+                        x_c_bounds[0],
+                        y_c_bounds[0],
+                        k_c_bounds[0],
+                        x_t_bounds[0],
+                        y_t_bounds[0],
+                        k_t_bounds[0],
+                        dz_te_bounds[0]
+        ]
+        return upper_bounds, lower_bounds
+
+    def from_parameters(self, parameters: list):
+        return BezierParsecAirfoil(
+            r_le=parameters[0],
+            alpha_te=parameters[1],
+            beta_te=parameters[2],
+            z_te=parameters[3],
+            gamma_le=parameters[4],
+            x_c=parameters[5],
+            y_c=parameters[6],
+            k_c=parameters[7],
+            x_t=parameters[8],
+            y_t=parameters[9],
+            k_t=parameters[10],
+            dz_te=parameters[11]
+        )
+
+    def _get_bounds_components():
+        r_le_bounds = [-0.04, -0.001]
+        alpha_te_bounds = [0.05, 0.1]
+        beta_te_bounds = [0.001, 0.3]
+        z_te_bounds = [0, 0.01]
+        gamma_le_bounds = [0.05, 0.1]
+        x_c_bounds = [0.2, 0.5]
+        y_c_bounds = [0, 0.2]
+        k_c_bounds = [-0.2, 0]
+        x_t_bounds = [0.15, 0.4]
+        y_t_bounds = [0.05, 0.15]
+        k_t_bounds = [-0.5, 0]
+        dz_te_bounds = [0, 0.001]
+
+        return r_le_bounds, alpha_te_bounds, beta_te_bounds, z_te_bounds, gamma_le_bounds, x_c_bounds, y_c_bounds, k_c_bounds, x_t_bounds, y_t_bounds, k_t_bounds, dz_te_bounds
 
 
 class BezierParsecAirfoil:
@@ -167,6 +278,23 @@ class BezierParsecAirfoil:
             coordinates.append([x, y])
         
         return coordinates
+    
+    @cached_property
+    def get_general_info(self):
+        return {
+            'r_le': self.r_le,
+            'alpha_te': self.alpha_te,
+            'beta_te': self.beta_te,
+            'z_te': self.z_te,
+            'gamma_le': self.gamma_le,
+            'x_c': self.x_c,
+            'y_c': self.y_c,
+            'k_c': self.k_c,
+            'x_t': self.x_t,
+            'y_t': self.y_t,
+            'k_t': self.k_t,
+            'dz_te': self.dz_te
+        }
 
     @staticmethod
     def get_random_airfoil(try_limit=10000):
