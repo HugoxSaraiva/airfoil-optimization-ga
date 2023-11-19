@@ -24,7 +24,7 @@ toolbox = base.Toolbox()
 PARALEL_PROCESSES = 8
 SEED = 42
 CONTROL_POINTS_SHAPE=(6,6)
-FREQ = 10
+FREQ = 5
 NGEN = 150
 MU = 100
 CXPB = 0.9
@@ -47,22 +47,20 @@ def evaluate(individual):
     with XFoilAdapter(timeout=12) as xfoil:
         try:
             airfoil = toolbox.airfoil().from_parameters(individual)
-            # xfoil.set_airfoils(airfoils=[airfoil])
-            # xfoil.set_run_condition(
-            #     reynolds=3e6,
-            #     mach=0,
-            #     alphas=[8],
-            # )
-            # results = xfoil.run()
+            xfoil.set_airfoils(airfoils=[airfoil])
+            xfoil.set_run_condition(
+                reynolds=3e6,
+                mach=0,
+                alphas=[8],
+            )
+            results = xfoil.run()
             # We have only one run, so we can just take the first element
-            # run_results = results[0][0].get('result', None)
-            # if run_results is None:
-            #     return 1000, 0
-            # cl = run_results['CL'][0]
-            # cd = run_results['CD'][0]
-            # return cd, cl
-            info = airfoil.get_general_info()
-            return info['thickness']['max_value'], info['camber']['max_value']
+            run_results = results[0][0].get('result', None)
+            if run_results is None:
+                return 1000, 0
+            cl = run_results['CL'][0]
+            cd = run_results['CD'][0]
+            return cd, cl
         except Exception as e:
             print('Error:' , e)
             return 1000, 0
