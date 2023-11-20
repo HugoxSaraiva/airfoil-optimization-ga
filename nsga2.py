@@ -154,9 +154,10 @@ def main(pool=None, seed=None, checkpoint=None, max_gen=NGEN):
         population = toolbox.select(population + offspring, MU)
         pareto.update(population)
         record = stats.compile(population)
-        best_cl_individual = max(population, key=lambda ind: ind.fitness.values[1])
-        best_cd_individual = min(population, key=lambda ind: ind.fitness.values[0])
-        best_cl_o_cd_individual = max(population, key=lambda ind: ind.fitness.values[1] / ind.fitness.values[0])
+        valid_candidates = [ind for ind in population if ind.fitness.values[0] <= 0.02 and ind.fitness.values[1] >= 0.9]
+        best_cl_individual = max(valid_candidates, key=lambda ind: ind.fitness.values[1])
+        best_cd_individual = min(valid_candidates, key=lambda ind: ind.fitness.values[0])
+        best_cl_o_cd_individual = max(valid_candidates, key=lambda ind: ind.fitness.values[1] / ind.fitness.values[0])
         best_cl_individuals.append(best_cl_individual)
         best_cd_individuals.append(best_cd_individual)
         best_cl_o_cd_individuals.append(best_cl_o_cd_individual)
